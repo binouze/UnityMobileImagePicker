@@ -100,7 +100,7 @@ namespace com.binouze
         private static AndroidJavaClass m_ajc;
         private static AndroidJavaClass AJC
         {
-            get { return m_ajc ??= new AndroidJavaClass( "com.binouze.MobileMediaPicker" ); }
+            get { return m_ajc ??= new AndroidJavaClass( "com.binouze.MobileImagePicker" ); }
         }
         private static void PickMediaAndroid( UrlPickedCallback callback )
         {
@@ -112,7 +112,7 @@ namespace com.binouze
         
         #if UNITY_IOS
         [System.Runtime.InteropServices.DllImport( "__Internal" )]
-	    private static extern void _MobileMediaPicker_PickMedia( string mediaSavePath, bool selectImages, bool selectVideos, MediaPickedDelegate callback );
+	    private static extern void _MobileImagePicker_PickMedia( string mediaSavePath, bool selectImages, bool selectVideos, MediaPickedDelegate callback );
         
         private delegate void MediaPickedDelegate(string path);
          
@@ -134,7 +134,7 @@ namespace com.binouze
         {
             _currentIosCallback = callback;
             
-            _MobileMediaPicker_PickMedia( SelectedMediaPath, true, false, delegateMediaPicked );
+            _MobileImagePicker_PickMedia( SelectedMediaPath, true, false, delegateMediaPicked );
         }
         #endif //UNITY_IOS
         #endif //!UNITY_EDITOR
