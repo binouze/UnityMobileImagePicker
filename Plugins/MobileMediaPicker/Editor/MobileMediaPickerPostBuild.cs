@@ -1,4 +1,47 @@
-﻿#if UNITY_ANDROID
+﻿#if UNITY_IOS
+
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
+using UnityEditor.iOS.Xcode;
+
+namespace com.binouze.Editor
+{
+    public class SWVPostBuildScript : IPostprocessBuildWithReport
+    {
+        /// <summary>
+        ///   <para>Returns the relative callback order for callbacks.  Callbacks with lower values are called before ones with higher values.</para>
+        /// </summary>
+        public int callbackOrder { get; } = 1;
+
+        /// <summary>
+        ///   <para>Implement this function to receive a callback after the build is complete.</para>
+        /// </summary>
+        /// <param name="report">A BuildReport containing information about the build, such as the target platform and output path.</param>
+        public void OnPostprocessBuild( BuildReport report )
+        {
+            if( report.summary.result != BuildResult.Succeeded )
+                return;
+
+            // read project
+            var projectPath = PBXProject.GetPBXProjectPath(report.summary.outputPath);
+            var project     = new PBXProject();
+            project.ReadFromFile( projectPath );
+            
+            // add needed frameworks
+            var targetGUID = project.GetUnityFrameworkTargetGuid();
+            project.AddFrameworkToProject( targetGUID, "Photos.framework",             false );
+            project.AddFrameworkToProject( targetGUID, "PhotosUI.framework",           false );
+            project.AddFrameworkToProject( targetGUID, "MobileCoreServices.framework", false );
+            project.AddFrameworkToProject( targetGUID, "ImageIO.framework",            false );
+            
+            // save            
+            project.WriteToFile( projectPath );
+        }
+    }
+}
+#endif
+
+#if UNITY_ANDROID
 using System.Xml;
 using UnityEngine;
 using UnityEditor.Android;

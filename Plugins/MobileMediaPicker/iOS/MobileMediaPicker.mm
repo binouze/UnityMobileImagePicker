@@ -1,25 +1,13 @@
 // Credit: https://github.com/yasirkula/UnityNativeGallery/blob/master/Plugins/NativeGallery/iOS/NativeGallery.mm
 
+#import <PhotosUI/PhotosUI.h>
 #import <Foundation/Foundation.h>
 #import <Photos/Photos.h>
 #import <MobileCoreServices/UTCoreTypes.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 #import <ImageIO/ImageIO.h>
-#if __IPHONE_OS_VERSION_MIN_REQUIRED < 80000
-#import <AssetsLibrary/AssetsLibrary.h>
-#endif
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 140000
-#import <PhotosUI/PhotosUI.h>
-#endif
 
-#ifdef UNITY_4_0 || UNITY_5_0
-#import "iPhone_View.h"
-#else
 extern UIViewController* UnityGetGLViewController();
-#endif
-
-
-#define CHECK_IOS_VERSION( version )  ([[[UIDevice currentDevice] systemVersion] compare:version options:NSNumericSearch] != NSOrderedAscending)
 
 
 typedef void (*DelegateCallbackFunction)(char* path);
@@ -77,17 +65,20 @@ static DelegateCallbackFunction _MMPCallback   = nil;
 
 +(void)sendPathToUnity:(NSString*) path
 {
-    [MediaPickedClass sendPathToDelegate:[self getCString:path]];
+    if( pickedType == 1 && path != nil && path.length > 0 )
+    {
+        char* cspath = [self loadImageAtPath:path tempFilePath:pickedMediaSavePath maximumSize:4096];
+        [MediaPickedClass sendPathToDelegate:cspath];
+    }
+    else
+    {
+        [MediaPickedClass sendPathToDelegate:[self getCString:path]];
+    }
 }
-
 
 static NSString                 *pickedMediaSavePath;
 static int                      imagePickerState;
-static BOOL                     simpleMediaPickMode;
-static BOOL                     pickingMultipleFiles;
-static UIPopoverController      *popup;
-static UIImagePickerController  *imagePicker;
-API_AVAILABLE(ios(14))
+static int                      pickedType;
 static PHPickerViewController   *imagePickerNew;
 
 // Credit: https://stackoverflow.com/a/10531752/2373034
@@ -97,246 +88,39 @@ static PHPickerViewController   *imagePickerNew;
     
 	pickedMediaSavePath  = mediaSavePath;
     imagePickerState     = 1;
-    pickingMultipleFiles = false;
     
-    if( @available(iOS 11, *) ){
-        simpleMediaPickMode = true;
-    }
-    else{
-        simpleMediaPickMode = false;
-    }
+    // PHPickerViewController is used on iOS 14
+    PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
+    config.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
+    config.selectionLimit = 1;
     
-	
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 140000
-    if( @available(iOS 14, *) )
-	{
-		// PHPickerViewController is used on iOS 14
-		PHPickerConfiguration *config = simpleMediaPickMode ? [[PHPickerConfiguration alloc] init] : [[PHPickerConfiguration alloc] initWithPhotoLibrary:[PHPhotoLibrary sharedPhotoLibrary]];
-		config.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
-		config.selectionLimit = 1;
-		
-		// selection filter
-		if( selectImages && !selectVideos )
-			config.filter = [PHPickerFilter anyFilterMatchingSubfilters:[NSArray arrayWithObjects:[PHPickerFilter imagesFilter], [PHPickerFilter livePhotosFilter], nil]];
-		else if( selectVideos && !selectImages )
-			config.filter = [PHPickerFilter videosFilter];
-		else
-			config.filter = [PHPickerFilter anyFilterMatchingSubfilters:[NSArray arrayWithObjects:[PHPickerFilter imagesFilter], [PHPickerFilter livePhotosFilter], [PHPickerFilter videosFilter], nil]];
+    // selection filter
+    if( selectImages && !selectVideos )
+    {
+        pickedType = 1;
+        config.filter = [PHPickerFilter anyFilterMatchingSubfilters:[NSArray arrayWithObjects:[PHPickerFilter imagesFilter], [PHPickerFilter livePhotosFilter], nil]];
+    }
+    else if( selectVideos && !selectImages )
+    {
+        pickedType = 2;
+        config.filter = [PHPickerFilter videosFilter];
+    }
+    else
+    {
+        pickedType = 3;
+        config.filter = [PHPickerFilter anyFilterMatchingSubfilters:[NSArray arrayWithObjects:[PHPickerFilter imagesFilter], [PHPickerFilter livePhotosFilter], [PHPickerFilter videosFilter], nil]];
+    }
 
-		
-        imagePickerNew = [[PHPickerViewController alloc] initWithConfiguration:config];
-		imagePickerNew.delegate = (id)self;
-		[UnityGetGLViewController() presentViewController:imagePickerNew animated:YES completion:^{ imagePickerState = 0; }];
-	}
-	else
-#endif
-	{
-		// UIImagePickerController is used on previous versions
-        imagePicker = [[UIImagePickerController alloc] init];
-		imagePicker.delegate = (id) self;
-		imagePicker.allowsEditing = NO;
-		imagePicker.sourceType = UIImagePickerControllerSourceTypePhotoLibrary;
-		
-		// selection filter
-		if( selectImages && !selectVideos )
-		{
-			if( @available(iOS 9.1, *) )
-				imagePicker.mediaTypes = [NSArray arrayWithObjects:(NSString *)kUTTypeImage, (NSString *)kUTTypeLivePhoto, nil];
-			else
-				imagePicker.mediaTypes = [NSArray arrayWithObject:(NSString *)kUTTypeImage];
-		}
-		else if( selectVideos && !selectImages )
-        {
-            imagePicker.mediaTypes = [NSArray arrayWithObjects:(NSString *)kUTTypeMovie, (NSString *)kUTTypeVideo, nil];
-        }
-		else
-		{
-			if( @available(iOS 9.1, *) )
-				imagePicker.mediaTypes = [NSArray arrayWithObjects:(NSString *)kUTTypeImage, (NSString *)kUTTypeLivePhoto, (NSString *)kUTTypeMovie, (NSString *)kUTTypeVideo, nil];
-			else
-				imagePicker.mediaTypes = [NSArray arrayWithObjects:(NSString *)kUTTypeImage, (NSString *)kUTTypeMovie, (NSString *)kUTTypeVideo, nil];
-		}
-		
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 110000
-		if( selectVideos )
-		{
-			// Don't compress picked videos if possible
-			if( @available(iOS 11, *) )
-				imagePicker.videoExportPreset = AVAssetExportPresetPassthrough;
-		}
-#endif
-		
-		UIViewController *rootViewController = UnityGetGLViewController();
-		// iPhone
-		if( UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone ) 
-        {
-            [rootViewController presentViewController:imagePicker animated:YES completion:^{ imagePickerState = 0; }];
-        }
-        // iPad
-		else
-		{
-            popup = [[UIPopoverController alloc] initWithContentViewController:imagePicker];
-			popup.delegate = (id) self;
-			[popup presentPopoverFromRect:CGRectMake( rootViewController.view.frame.size.width / 2, rootViewController.view.frame.size.height / 2, 1, 1 ) inView:rootViewController.view permittedArrowDirections:0 animated:YES];
-		}
-	}
+    
+    imagePickerNew = [[PHPickerViewController alloc] initWithConfiguration:config];
+    imagePickerNew.delegate = (id)self;
+    [UnityGetGLViewController() presentViewController:imagePickerNew animated:YES completion:^{ imagePickerState = 0; }];
 }
 
 
-
-
-
-
-
-
-
-
-
-+ (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary *)info
-{
-	NSString *resultPath = nil;
-	
-	if( [info[UIImagePickerControllerMediaType] isEqualToString:(NSString *)kUTTypeImage] )
-	{
-		NSLog( @"UIImagePickerController Picked an image" );
-		
-		// On iOS 8.0 or later, try to obtain the raw data of the image (which allows picking gifs properly or preserving metadata)
-		if( @available(iOS 8, *) )
-		{
-			PHAsset *asset = nil;
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 110000
-			if( @available(iOS 11, *) )
-			{
-				// Try fetching the source image via UIImagePickerControllerImageURL
-				NSURL *mediaUrl = info[UIImagePickerControllerImageURL];
-				if( mediaUrl != nil )
-				{
-					NSString *imagePath = [mediaUrl path];
-					if( imagePath != nil && [[NSFileManager defaultManager] fileExistsAtPath:imagePath] )
-					{
-						NSError *error;
-						NSString *newPath = [pickedMediaSavePath stringByAppendingPathExtension:[imagePath pathExtension]];
-						
-						if( ![[NSFileManager defaultManager] fileExistsAtPath:newPath] || [[NSFileManager defaultManager] removeItemAtPath:newPath error:&error] )
-						{
-							if( [[NSFileManager defaultManager] copyItemAtPath:imagePath toPath:newPath error:&error] )
-							{
-								resultPath = newPath;
-								NSLog( @"Copied source image from UIImagePickerControllerImageURL" );
-							}
-							else
-								NSLog( @"Error copying image: %@", error );
-						}
-						else
-							NSLog( @"Error deleting existing image: %@", error );
-					}
-				}
-				
-				if( resultPath == nil )
-					asset = info[UIImagePickerControllerPHAsset];
-			}
-#endif
-			
-			if( resultPath == nil && !simpleMediaPickMode )
-			{
-				if( asset == nil )
-				{
-					NSURL *mediaUrl = info[UIImagePickerControllerReferenceURL] ?: info[UIImagePickerControllerMediaURL];
-					if( mediaUrl != nil )
-						asset = [[PHAsset fetchAssetsWithALAssetURLs:[NSArray arrayWithObject:mediaUrl] options:nil] firstObject];
-				}
-				
-				resultPath = [self trySavePHAsset:asset atIndex:1];
-			}
-		}
-		
-		if( resultPath == nil )
-		{
-			// Save image as PNG
-			UIImage *image = info[UIImagePickerControllerOriginalImage];
-			if( image != nil )
-			{
-				resultPath = [pickedMediaSavePath stringByAppendingPathExtension:@"png"];
-				if( ![self saveImageAsPNG:image toPath:resultPath] )
-				{
-					NSLog( @"Error creating PNG image" );
-					resultPath = nil;
-				}
-			}
-			else
-				NSLog( @"Error fetching original image from picker" );
-		}
-	}
-	else if( CHECK_IOS_VERSION( @"9.1" ) && [info[UIImagePickerControllerMediaType] isEqualToString:(NSString *)kUTTypeLivePhoto] )
-	{
-		NSLog( @"Picked a live photo" );
-		
-		// Save live photo as PNG
-		UIImage *image = info[UIImagePickerControllerOriginalImage];
-		if( image != nil )
-		{
-			resultPath = [pickedMediaSavePath stringByAppendingPathExtension:@"png"];
-			if( ![self saveImageAsPNG:image toPath:resultPath] )
-			{
-				NSLog( @"Error creating PNG image" );
-				resultPath = nil;
-			}
-		}
-		else
-			NSLog( @"Error fetching live photo's still image from picker" );
-	}
-	else
-	{
-		NSLog( @"Picked a video" );
-		
-		NSURL *mediaUrl = info[UIImagePickerControllerMediaURL] ?: info[UIImagePickerControllerReferenceURL];
-		if( mediaUrl != nil )
-		{
-			resultPath = [mediaUrl path];
-			
-			// On iOS 13, picked file becomes unreachable as soon as the UIImagePickerController disappears,
-			// in that case, copy the video to a temporary location
-			if( CHECK_IOS_VERSION( @"13.0" ) )
-			{
-				NSError *error;
-				NSString *newPath = [pickedMediaSavePath stringByAppendingPathExtension:[resultPath pathExtension]];
-				
-				if( ![[NSFileManager defaultManager] fileExistsAtPath:newPath] || [[NSFileManager defaultManager] removeItemAtPath:newPath error:&error] )
-				{
-					if( [[NSFileManager defaultManager] copyItemAtPath:resultPath toPath:newPath error:&error] )
-						resultPath = newPath;
-					else
-					{
-						NSLog( @"Error copying video: %@", error );
-						resultPath = nil;
-					}
-				}
-				else
-				{
-					NSLog( @"Error deleting existing video: %@", error );
-					resultPath = nil;
-				}
-			}
-		}
-	}
-	
-	popup = nil;
-	imagePicker = nil;
-	imagePickerState = 2;
-    
-    [self sendPathToUnity:resultPath];
-    
-	//UnitySendMessage( "NGMediaReceiveCallbackiOS", "OnMediaReceived", [self getCString:resultPath] );
-	
-	[picker dismissViewControllerAnimated:NO completion:nil];
-}
-#pragma clang diagnostic pop
-
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 140000
 // Credit: https://ikyle.me/blog/2020/phpickerviewcontroller
-+(void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results
-API_AVAILABLE(ios(14)){
-	imagePickerNew = nil;
++(void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+	imagePickerNew   = nil;
 	imagePickerState = 2;
 	
 	[picker dismissViewControllerAnimated:NO completion:nil];
@@ -349,112 +133,97 @@ API_AVAILABLE(ios(14)){
 		
 		for( int i = 0; i < [results count]; i++ )
 		{
-			PHPickerResult *result = results[i];
-			NSItemProvider *itemProvider = result.itemProvider;
-			NSString *assetIdentifier = result.assetIdentifier;
-			__block NSString *resultPath = nil;
+            // this plugin don't support multiple selections
+            if( i > 0 )
+                break;
+            
+			PHPickerResult   *result       = results[i];
+			NSItemProvider   *itemProvider = result.itemProvider;
+			__block NSString *resultPath   = nil;
 			
 			int j = i + 1;
-			
-			//NSLog( @"result: %@", result );
-			//NSLog( @"%@", result.assetIdentifier);
-			//NSLog( @"%@", result.itemProvider);
 
 			if( [itemProvider hasItemConformingToTypeIdentifier:(NSString *)kUTTypeImage] )
 			{
 				NSLog( @"PHPickerViewController Picked an image" );
 				
-				if( !simpleMediaPickMode && assetIdentifier != nil )
-				{
-					PHAsset *asset = [[PHAsset fetchAssetsWithLocalIdentifiers:[NSArray arrayWithObject:assetIdentifier] options:nil] firstObject];
-					resultPath = [self trySavePHAsset:asset atIndex:j];
-				}
+                dispatch_group_enter( group );
+                
+                [itemProvider loadFileRepresentationForTypeIdentifier:(NSString *)kUTTypeImage completionHandler:^( NSURL *url, NSError *error )
+                {
+                    if( url != nil )
+                    {
+                        // Copy the image to a temporary location because the returned image will be deleted by the OS after this callback is completed
+                        resultPath = [url path];
+                        NSString *newPath = [[NSString stringWithFormat:@"%@%d", pickedMediaSavePath, j] stringByAppendingPathExtension:[resultPath pathExtension]];
+                        
+                        if( ![[NSFileManager defaultManager] fileExistsAtPath:newPath] || [[NSFileManager defaultManager] removeItemAtPath:newPath error:&error] )
+                        {
+                            if( [[NSFileManager defaultManager] copyItemAtPath:resultPath toPath:newPath error:&error])
+                                resultPath = newPath;
+                            else
+                            {
+                                NSLog( @"Error copying image: %@", error );
+                                resultPath = nil;
+                            }
+                        }
+                        else
+                        {
+                            NSLog( @"Error deleting existing image: %@", error );
+                            resultPath = nil;
+                        }
+                    }
+                    else
+                        NSLog( @"Error getting the picked image's path: %@", error );
+                    
+                    if( resultPath != nil )
+                    {
+                        [arrayLock lock];
+                        [resultPaths addObject:resultPath];
+                        [arrayLock unlock];
+                    }
+                    else
+                    {
+                        if( [itemProvider canLoadObjectOfClass:[UIImage class]] )
+                        {
+                            dispatch_group_enter( group );
+                            
+                            [itemProvider loadObjectOfClass:[UIImage class] completionHandler:^( __kindof id<NSItemProviderReading> object, NSError *error )
+                            {
+                                if( object != nil && [object isKindOfClass:[UIImage class]] )
+                                {
+                                    resultPath = [[NSString stringWithFormat:@"%@%d", pickedMediaSavePath, j] stringByAppendingPathExtension:@"png"];
+                                    if( ![self saveImageAsPNG:(UIImage *)object toPath:resultPath] )
+                                    {
+                                        NSLog( @"Error creating PNG image" );
+                                        resultPath = nil;
+                                    }
+                                }
+                                else
+                                    NSLog( @"Error generating UIImage from picked image: %@", error );
+                                
+                                [arrayLock lock];
+                                [resultPaths addObject:( resultPath != nil ? resultPath : @"" )];
+                                [arrayLock unlock];
+                                
+                                dispatch_group_leave( group );
+                            }];
+                        }
+                        else
+                        {
+                            NSLog( @"Can't generate UIImage from picked image" );
+                            
+                            [arrayLock lock];
+                            [resultPaths addObject:@""];
+                            [arrayLock unlock];
+                        }
+                    }
+                    
+                    dispatch_group_leave( group );
+                }];
 				
-				if( resultPath != nil )
-				{
-					[arrayLock lock];
-					[resultPaths addObject:resultPath];
-					[arrayLock unlock];
-				}
-				else
-				{
-					dispatch_group_enter( group );
-					
-					[itemProvider loadFileRepresentationForTypeIdentifier:(NSString *)kUTTypeImage completionHandler:^( NSURL *url, NSError *error )
-					{
-						if( url != nil )
-						{
-							// Copy the image to a temporary location because the returned image will be deleted by the OS after this callback is completed
-							resultPath = [url path];
-							NSString *newPath = [[NSString stringWithFormat:@"%@%d", pickedMediaSavePath, j] stringByAppendingPathExtension:[resultPath pathExtension]];
-							
-							if( ![[NSFileManager defaultManager] fileExistsAtPath:newPath] || [[NSFileManager defaultManager] removeItemAtPath:newPath error:&error] )
-							{
-								if( [[NSFileManager defaultManager] copyItemAtPath:resultPath toPath:newPath error:&error])
-									resultPath = newPath;
-								else
-								{
-									NSLog( @"Error copying image: %@", error );
-									resultPath = nil;
-								}
-							}
-							else
-							{
-								NSLog( @"Error deleting existing image: %@", error );
-								resultPath = nil;
-							}
-						}
-						else
-							NSLog( @"Error getting the picked image's path: %@", error );
-						
-						if( resultPath != nil )
-						{
-							[arrayLock lock];
-							[resultPaths addObject:resultPath];
-							[arrayLock unlock];
-						}
-						else
-						{
-							if( [itemProvider canLoadObjectOfClass:[UIImage class]] )
-							{
-								dispatch_group_enter( group );
-								
-								[itemProvider loadObjectOfClass:[UIImage class] completionHandler:^( __kindof id<NSItemProviderReading> object, NSError *error )
-								{
-									if( object != nil && [object isKindOfClass:[UIImage class]] )
-									{
-										resultPath = [[NSString stringWithFormat:@"%@%d", pickedMediaSavePath, j] stringByAppendingPathExtension:@"png"];
-										if( ![self saveImageAsPNG:(UIImage *)object toPath:resultPath] )
-										{
-											NSLog( @"Error creating PNG image" );
-											resultPath = nil;
-										}
-									}
-									else
-										NSLog( @"Error generating UIImage from picked image: %@", error );
-									
-									[arrayLock lock];
-									[resultPaths addObject:( resultPath != nil ? resultPath : @"" )];
-									[arrayLock unlock];
-									
-									dispatch_group_leave( group );
-								}];
-							}
-							else
-							{
-								NSLog( @"Can't generate UIImage from picked image" );
-								
-								[arrayLock lock];
-								[resultPaths addObject:@""];
-								[arrayLock unlock];
-							}
-						}
-						
-						dispatch_group_leave( group );
-					}];
-				}
 			}
-			else if( CHECK_IOS_VERSION( @"9.1" ) && [itemProvider hasItemConformingToTypeIdentifier:(NSString *)kUTTypeLivePhoto] )
+			else if( [itemProvider hasItemConformingToTypeIdentifier:(NSString *)kUTTypeLivePhoto] )
 			{
 				NSLog( @"Picked a live photo" );
 				
@@ -615,130 +384,101 @@ API_AVAILABLE(ios(14)){
 		dispatch_group_notify( group, dispatch_get_main_queue(),
 		^{
             [self sendPathToUnity:resultPaths[0]];
-            
-			/*if( !pickingMultipleFiles )
-				UnitySendMessage( "NGMediaReceiveCallbackiOS", "OnMediaReceived", [self getCString:resultPaths[0]] );
-			else
-				UnitySendMessage( "NGMediaReceiveCallbackiOS", "OnMultipleMediaReceived", [self getCString:[resultPaths componentsJoinedByString:@">"]] );*/
 		});
 	}
 	else
 	{
 		NSLog( @"No media picked" );
-		
         [self sendPathToUnity:@""];
-        
-		/*if( !pickingMultipleFiles )
-			UnitySendMessage( "NGMediaReceiveCallbackiOS", "OnMediaReceived", "" );
-		else
-			UnitySendMessage( "NGMediaReceiveCallbackiOS", "OnMultipleMediaReceived", "" );*/
 	}
 }
-#endif
 
-
-+ (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker
-{
-	NSLog( @"UIImagePickerController cancelled" );
-
-	popup = nil;
-	imagePicker = nil;
-    [self sendPathToUnity:@""];
-	//UnitySendMessage( "NGMediaReceiveCallbackiOS", "OnMediaReceived", "" );
-	
-	[picker dismissViewControllerAnimated:NO completion:nil];
-}
-
-+ (void)popoverControllerDidDismissPopover:(UIPopoverController *)popoverController
-{
-	NSLog( @"UIPopoverController dismissed" );
-
-	popup = nil;
-	imagePicker = nil;
-    
-    [self sendPathToUnity:@""];
-	//UnitySendMessage( "NGMediaReceiveCallbackiOS", "OnMediaReceived", "" );
-}
-
-
-+ (NSString *)trySavePHAsset:(PHAsset *)asset atIndex:(int)filenameIndex
-{
-    if( asset == nil )
-        return nil;
-    
-    __block NSString *resultPath = nil;
-    
-    PHImageRequestOptions *options = [[PHImageRequestOptions alloc] init];
-    options.synchronous = YES;
-    options.version = PHImageRequestOptionsVersionCurrent;
-    
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 130000
-    if( CHECK_IOS_VERSION( @"13.0" ) )
-    {
-        [[PHImageManager defaultManager] requestImageDataAndOrientationForAsset:asset options:options resultHandler:^( NSData *imageData, NSString *dataUTI, CGImagePropertyOrientation orientation, NSDictionary *imageInfo )
-        {
-            if( imageData != nil )
-                resultPath = [self trySaveSourceImage:imageData withInfo:imageInfo atIndex:filenameIndex];
-            else
-                NSLog( @"Couldn't fetch raw image data" );
-        }];
-    }
-    else
-#endif
-    {
-        [[PHImageManager defaultManager] requestImageDataForAsset:asset options:options resultHandler:^( NSData *imageData, NSString *dataUTI, UIImageOrientation orientation, NSDictionary *imageInfo )
-        {
-            if( imageData != nil )
-                resultPath = [self trySaveSourceImage:imageData withInfo:imageInfo atIndex:filenameIndex];
-            else
-                NSLog( @"Couldn't fetch raw image data" );
-        }];
-    }
-    
-    return resultPath;
-}
-
-
-+ (NSString *)trySaveSourceImage:(NSData *)imageData withInfo:(NSDictionary *)info atIndex:(int)filenameIndex
-{
-    NSString *filePath = info[@"PHImageFileURLKey"];
-    if( filePath != nil ) // filePath can actually be an NSURL, convert it to NSString
-        filePath = [NSString stringWithFormat:@"%@", filePath];
-    
-    if( filePath == nil || [filePath length] == 0 )
-    {
-        filePath = info[@"PHImageFileUTIKey"];
-        if( filePath != nil )
-            filePath = [NSString stringWithFormat:@"%@", filePath];
-    }
-    
-    NSString *resultPath;
-    if( filePath == nil || [filePath length] == 0 )
-        resultPath = [NSString stringWithFormat:@"%@%d", pickedMediaSavePath, filenameIndex];
-    else
-        resultPath = [[NSString stringWithFormat:@"%@%d", pickedMediaSavePath, filenameIndex] stringByAppendingPathExtension:[filePath pathExtension]];
-    
-    NSError *error;
-    if( ![[NSFileManager defaultManager] fileExistsAtPath:resultPath] || [[NSFileManager defaultManager] removeItemAtPath:resultPath error:&error] )
-    {
-        if( ![imageData writeToFile:resultPath atomically:YES] )
-        {
-            NSLog( @"Error copying source image to file" );
-            resultPath = nil;
-        }
-    }
-    else
-    {
-        NSLog( @"Error deleting existing image: %@", error );
-        resultPath = nil;
-    }
-    
-    return resultPath;
-}
 
 + (BOOL)saveImageAsPNG:(UIImage *)image toPath:(NSString *)resultPath
 {
-    return [UIImagePNGRepresentation( [self scaleImage:image maxSize:16384] ) writeToFile:resultPath atomically:YES];
+    return [UIImagePNGRepresentation( [self scaleImage:image maxSize:4096] ) writeToFile:resultPath atomically:YES];
+}
+
+
+// Credit: https://stackoverflow.com/a/4170099/2373034
++ (NSArray *)getImageMetadata:(NSString *)path
+{
+    int width       = 0;
+    int height      = 0;
+    int orientation = -1;
+    
+    CGImageSourceRef imageSource = CGImageSourceCreateWithURL( (__bridge CFURLRef) [NSURL fileURLWithPath:path], nil );
+    if( imageSource != nil )
+    {
+        NSDictionary *options = [NSDictionary dictionaryWithObject:[NSNumber numberWithBool:NO] forKey:(__bridge NSString *)kCGImageSourceShouldCache];
+        CFDictionaryRef imageProperties = CGImageSourceCopyPropertiesAtIndex( imageSource, 0, (__bridge CFDictionaryRef) options );
+        CFRelease( imageSource );
+        
+        CGFloat widthF = 0.0f, heightF = 0.0f;
+        if( imageProperties != nil )
+        {
+            if( CFDictionaryContainsKey( imageProperties, kCGImagePropertyPixelWidth ) )
+                CFNumberGetValue( (CFNumberRef) CFDictionaryGetValue( imageProperties, kCGImagePropertyPixelWidth ), kCFNumberCGFloatType, &widthF );
+            
+            if( CFDictionaryContainsKey( imageProperties, kCGImagePropertyPixelHeight ) )
+                CFNumberGetValue( (CFNumberRef) CFDictionaryGetValue( imageProperties, kCGImagePropertyPixelHeight ), kCFNumberCGFloatType, &heightF );
+            
+            if( CFDictionaryContainsKey( imageProperties, kCGImagePropertyOrientation ) )
+            {
+                CFNumberGetValue( (CFNumberRef) CFDictionaryGetValue( imageProperties, kCGImagePropertyOrientation ), kCFNumberIntType, &orientation );
+                
+                if( orientation > 4 )
+                {
+                    // Landscape image
+                    CGFloat temp = widthF;
+                    widthF = heightF;
+                    heightF = temp;
+                }
+            }
+            
+            CFRelease( imageProperties );
+        }
+        
+        width = (int) roundf( widthF );
+        height = (int) roundf( heightF );
+    }
+    
+    return [[NSArray alloc] initWithObjects:[NSNumber numberWithInt:width], [NSNumber numberWithInt:height], [NSNumber numberWithInt:orientation], nil];
+}
+
++ (char *)loadImageAtPath:(NSString *)path tempFilePath:(NSString *)tempFilePath maximumSize:(int)maximumSize
+{
+    // Check if the image can be loaded by Unity without requiring a conversion to PNG
+    // Credit: https://stackoverflow.com/a/12048937/2373034
+    NSString *extension = [path pathExtension];
+    BOOL conversionNeeded = [extension caseInsensitiveCompare:@"jpg"] != NSOrderedSame && [extension caseInsensitiveCompare:@"jpeg"] != NSOrderedSame && [extension caseInsensitiveCompare:@"png"] != NSOrderedSame;
+
+    if( !conversionNeeded )
+    {
+        // Check if the image needs to be processed at all
+        NSArray *metadata = [self getImageMetadata:path];
+        int orientationInt = [metadata[2] intValue];  // 1: correct orientation, [1,8]: valid orientation range
+        if( orientationInt == 1 && [metadata[0] intValue] <= maximumSize && [metadata[1] intValue] <= maximumSize )
+            return [self getCString:path];
+    }
+    
+    UIImage *image = [UIImage imageWithContentsOfFile:path];
+    if( image == nil )
+        return [self getCString:path];
+    
+    UIImage *scaledImage = [self scaleImage:image maxSize:maximumSize];
+    if( conversionNeeded || scaledImage != image )
+    {
+        if( ![UIImagePNGRepresentation( scaledImage ) writeToFile:tempFilePath atomically:YES] )
+        {
+            NSLog( @"Error creating scaled image" );
+            return [self getCString:path];
+        }
+        
+        return [self getCString:tempFilePath];
+    }
+    else
+        return [self getCString:path];
 }
 
 + (UIImage *)scaleImage:(UIImage *)image maxSize:(int)maxSize
@@ -767,28 +507,16 @@ API_AVAILABLE(ios(14)){
     CGFloat scaleRatio = scaleX < scaleY ? scaleX : scaleY;
     CGRect imageRect = CGRectMake( 0, 0, width * scaleRatio, height * scaleRatio );
     
-#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 100000
     // Resize image with UIGraphicsImageRenderer (Apple's recommended API) if possible
-    if( CHECK_IOS_VERSION( @"10.0" ) )
+    UIGraphicsImageRendererFormat *format = [image imageRendererFormat];
+    format.opaque = !hasAlpha;
+    format.scale  = image.scale;
+   
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:imageRect.size format:format];
+    image = [renderer imageWithActions:^( UIGraphicsImageRendererContext* _Nonnull myContext )
     {
-        UIGraphicsImageRendererFormat *format = [image imageRendererFormat];
-        format.opaque = !hasAlpha;
-        format.scale = image.scale;
-       
-        UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:imageRect.size format:format];
-        image = [renderer imageWithActions:^( UIGraphicsImageRendererContext* _Nonnull myContext )
-        {
-            [image drawInRect:imageRect];
-        }];
-    }
-    else
-    #endif
-    {
-        UIGraphicsBeginImageContextWithOptions( imageRect.size, !hasAlpha, image.scale );
         [image drawInRect:imageRect];
-        image = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-    }
+    }];
     
     return image;
 }
