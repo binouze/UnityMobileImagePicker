@@ -3,6 +3,7 @@
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEditor.iOS.Xcode;
+using UnityEngine;
 
 namespace com.binouze.Editor
 {
@@ -11,7 +12,7 @@ namespace com.binouze.Editor
         /// <summary>
         ///   <para>Returns the relative callback order for callbacks.  Callbacks with lower values are called before ones with higher values.</para>
         /// </summary>
-        public int callbackOrder { get; } = 1;
+        public int callbackOrder { get; } = int.MaxValue-100;
 
         /// <summary>
         ///   <para>Implement this function to receive a callback after the build is complete.</para>
@@ -19,7 +20,9 @@ namespace com.binouze.Editor
         /// <param name="report">A BuildReport containing information about the build, such as the target platform and output path.</param>
         public void OnPostprocessBuild( BuildReport report )
         {
-            if( report.summary.result != BuildResult.Succeeded )
+            Debug.Log($"MobileImagePickerPostBuild {report.summary.result}");
+            
+            if( report.summary.result is BuildResult.Failed or BuildResult.Cancelled )
                 return;
 
             // read project
@@ -51,7 +54,7 @@ namespace com.binouze.Editor
 {
     public class MobileImagePickerPostBuild: IPostGenerateGradleAndroidProject
     {
-        public int callbackOrder { get { return 1; } }
+        public int callbackOrder { get; } = int.MaxValue-100;
 
         public void OnPostGenerateGradleAndroidProject(string basePath)
         {
