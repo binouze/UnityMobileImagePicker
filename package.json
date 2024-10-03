@@ -4,7 +4,11 @@
   "version": "1.0.0",
   "documentationUrl": "https://github.com/binouze/UnityMobileMediaPicker",
   "changelogUrl": "https://github.com/binouze/UnityMobileMediaPicker/releases",
-  "licensesUrl": "https://github.com/binouze/UnityMobileMediaPicker/blob/master/LICENSE.txt",
+  "licensesUrl": "https://github.com/binouze/UnityMobileMediaPicker/blob/master/LICENSE",
   "description": "Simple Media picker to use in Unity mobile projects, iOS and Android supported.",
-  "hideInEditor": false
+  "hideInEditor": false,
+  "author": {
+    "name": "Benjamin BOUFFIER",
+    "email": "benjamin.bouffier@gmail.com"
+  }
 }
