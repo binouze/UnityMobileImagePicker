@@ -1,11 +1,11 @@
 {
-  "name": "com.binouze.mobilemediapicker",
-  "displayName": "Mobile Media Picker",
+  "name": "com.binouze.mobileimagepicker",
+  "displayName": "Mobile Image Picker",
   "version": "1.0.0",
-  "documentationUrl": "https://github.com/binouze/UnityMobileMediaPicker",
-  "changelogUrl": "https://github.com/binouze/UnityMobileMediaPicker/releases",
-  "licensesUrl": "https://github.com/binouze/UnityMobileMediaPicker/blob/master/LICENSE",
-  "description": "Simple Media picker to use in Unity mobile projects, iOS and Android supported.",
+  "documentationUrl": "https://github.com/binouze/UnityMobileImagePicker",
+  "changelogUrl": "https://github.com/binouze/UnityMobileImagePicker/releases",
+  "licensesUrl": "https://github.com/binouze/UnityMobileImagePicker/blob/master/LICENSE",
+  "description": "Simple image picker to use in Unity mobile projects, iOS and Android supported.",
   "hideInEditor": false,
   "author": {
     "name": "Benjamin BOUFFIER",
