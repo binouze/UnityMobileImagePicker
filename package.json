@@ -1,0 +1,10 @@
+{
+  "name": "com.binouze.mobilemediapicker",
+  "displayName": "Mobile Media Picker",
+  "version": "1.0.0",
+  "documentationUrl": "https://github.com/binouze/UnityMobileMediaPicker",
+  "changelogUrl": "https://github.com/binouze/UnityMobileMediaPicker/releases",
+  "licensesUrl": "https://github.com/binouze/UnityMobileMediaPicker/blob/master/LICENSE.txt",
+  "description": "Simple Media picker to use in Unity mobile projects, iOS and Android supported.",
+  "hideInEditor": false
+}
