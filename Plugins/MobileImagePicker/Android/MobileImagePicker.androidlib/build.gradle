@@ -1,0 +1,29 @@
+apply plugin: 'com.android.library'
+
+dependencies {
+    implementation fileTree(dir: 'bin', include: ['*.jar'])
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+android {
+    namespace "com.binouze.mobileimagepicker"
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+            //java.srcDirs = ['src']
+            res.srcDirs = ['res']
+            assets.srcDirs = ['assets']
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+
+    compileSdkVersion 34
+    defaultConfig {
+        targetSdkVersion 9
+        consumerProguardFiles 'proguard.pro'
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+}

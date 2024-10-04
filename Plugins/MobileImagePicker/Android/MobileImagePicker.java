@@ -2,7 +2,7 @@ package com.binouze;
 
 // implementation pour le Android PhotoPicker: 
 // https://developer.android.com/training/data-storage/shared/photopicker#java
-// ajouter <activity android:name="com.binouze.NativeMediaPicker" android:exported="true" android:theme="@style/Theme.AppCompat.Translucent" />
+// ajouter <activity android:name="com.binouze.NativeMImagePicker" android:exported="true" android:theme="@style/Theme.AppCompat.Translucent" />
 // dans le AndroidManifest.xml
 
 // il faut également ajouter les lignes uisvantes pour la rétrocompatibilité

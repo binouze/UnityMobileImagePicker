@@ -16,12 +16,12 @@ using AOT;
 namespace com.binouze
 {
     #if !UNITY_EDITOR && UNITY_ANDROID
-    public class MediaPickerCallback : AndroidJavaProxy
+    public class ImagePickerCallback : AndroidJavaProxy
     {
         private readonly MobileImagePicker.UrlPickedCallback Callback;
 
-        public MediaPickerCallback( MobileImagePicker.UrlPickedCallback callback ) : base(
-            "com.binouze.MediaPickerCallback" )
+        public ImagePickerCallback( MobileImagePicker.UrlPickedCallback callback ) : base(
+            "com.binouze.ImagePickerCallback" )
         {
             Callback = callback;
         }
@@ -104,7 +104,7 @@ namespace com.binouze
         }
         private static void PickMediaAndroid( UrlPickedCallback callback )
         {
-            AJC.CallStatic( "PickMedia", new MediaPickerCallback( callback ), SelectedMediaPath, true, false );
+            AJC.CallStatic( "PickMedia", new ImagePickerCallback( callback ), SelectedMediaPath, true, false );
         }
         #endif // UNITY_ANDROID
         
