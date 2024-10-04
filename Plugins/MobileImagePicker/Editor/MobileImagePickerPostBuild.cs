@@ -64,13 +64,25 @@ namespace com.binouze.Editor
         /// <summary>
         /// on android we need to add the activity element in the AndroidManifest
         /// <activity android:name="com.binouze.MobileImagePicker" android:exported="true" android:theme="@style/Theme.AppCompat.MobileImagePicker" />
+        ///
+        /// we need to add the ModuleDependency service too, for compatibility with older android devices
+        /// <!-- Trigger Google Play services to install the backported photo picker module. -->
+        /// <service android:name="com.google.android.gms.metadata.ModuleDependencies"
+        ///          android:enabled="false"
+        ///          android:exported="false"
+        ///          tools:ignore="MissingClass">
+        ///     <intent-filter>
+        ///         <action android:name="com.google.android.gms.metadata.MODULE_DEPENDENCIES" />
+        ///     </intent-filter>
+        ///     <meta-data android:name="photopicker_activity:0:required" android:value="" />
+        /// </service>
         /// </summary>
         /// <param name="basePath"></param>
-        private void ModifyAndroidManifestXmlFile(string basePath)
+        private static void ModifyAndroidManifestXmlFile(string basePath)
         {
             var appManifestPath = Path.Combine(basePath, "src/main/AndroidManifest.xml");
 
-            // Let's open the app's AndroidManifest.xml file.
+            // open the app's AndroidManifest.xml file.
             var doc = new XmlDocument();
             doc.Load(appManifestPath);
 
@@ -83,16 +95,50 @@ namespace com.binouze.Editor
             }
             else
             {
-                var namespaceOfPrefix = childNode.GetNamespaceOfPrefix("android");
+                var androidNamespace = childNode.GetNamespaceOfPrefix("android");
+                var toolsNamespace   = childNode.GetNamespaceOfPrefix("tools");
 
-                TryFindElementWithAndroidName( childNode, "com.binouze.MobileImagePicker", out var activity );
+                // -----------------------------------------------------------------------------------------------------
+                // add the com.binouze.MobileImagePicker activity 
+                
+                var activityElement = doc.CreateElement("activity");
+                activityElement.SetAttribute("name",     androidNamespace, "com.binouze.MobileImagePicker");
+                activityElement.SetAttribute("exported", androidNamespace, "true" );
+                activityElement.SetAttribute("theme",    androidNamespace, "@style/Theme.AppCompat.MobileImagePicker" );
+                SetOrReplaceXmlElement(childNode, activityElement);
 			    
-                var element1 = doc.CreateElement("activity");
-                element1.SetAttribute("name",     namespaceOfPrefix, "com.binouze.MobileImagePicker");
-                element1.SetAttribute("exported", namespaceOfPrefix, "true" );
-                element1.SetAttribute("theme",    namespaceOfPrefix, "@style/Theme.AppCompat.MobileImagePicker" );
-                SetOrReplaceXmlElement(childNode, element1, activity);
-			    
+                // -----------------------------------------------------------------------------------------------------
+                // add the com.google.android.gms.metadata.ModuleDependencies service
+                
+                var serviceElement = doc.CreateElement("service");
+                serviceElement.SetAttribute("name",     androidNamespace, "com.google.android.gms.metadata.ModuleDependencies");
+                serviceElement.SetAttribute("enabled",  androidNamespace, "false" );
+                serviceElement.SetAttribute("exported", androidNamespace, "false" );
+                serviceElement.SetAttribute("ignore",   toolsNamespace,   "MissingClass" );
+                
+                // prepare the intent-filter element
+                var intentFilterElement       = doc.CreateElement("intent-filter");
+                var intentFilterActionElement = doc.CreateElement("action");
+                intentFilterActionElement.SetAttribute("name", androidNamespace, "com.google.android.gms.metadata.MODULE_DEPENDENCIES");
+                intentFilterElement.AppendChild( intentFilterActionElement );
+                
+                // prepare the meta-data element
+                var metaElement = doc.CreateElement("meta-data");
+                metaElement.SetAttribute( "name",  androidNamespace, "photopicker_activity:0:required" );
+                metaElement.SetAttribute( "value", androidNamespace, "" );
+                
+                // add the intent-filter to the service element
+                serviceElement.AppendChild(intentFilterElement);
+                // add the meta-data to the service element
+                serviceElement.AppendChild(metaElement);
+                
+                // add the service in the application
+                SetOrReplaceXmlElement(childNode, serviceElement);
+                
+                
+                // -----------------------------------------------------------------------------------------------------
+                // save the updated manifest
+                
                 var settings = new XmlWriterSettings
                 {
                     Indent          = true,
