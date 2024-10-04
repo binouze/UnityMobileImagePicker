@@ -18,6 +18,12 @@ package com.binouze;
 //    <meta-data android:name="photopicker_activity:0:required" android:value="" />
 //</service>
 
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
+import android.provider.MediaStore;
 import android.webkit.MimeTypeMap;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -119,42 +125,14 @@ public class MobileImagePicker extends AppCompatActivity
 
     private static String copyToTempFile( Context context, Uri uri )
     {
+        String path    = uri.toString();
+        String newPath = EnsureImageCompatibility(context,path,_tempPathDirectory,4096);
+        if( !Objects.equals(newPath, path) )
+            return newPath;
+
         // Credit: https://developer.android.com/training/secure-file-sharing/retrieve-info.html#RetrieveFileInfo
         ContentResolver resolver = context.getContentResolver();
-        //Cursor returnCursor      = null;
         String filename          = "temp";
-        /*long fileSize = -1, copiedBytes = 0;*/
-
-        /*try
-        {
-            returnCursor = resolver.query( uri, null, null, null, null );
-            if( returnCursor != null && returnCursor.moveToFirst() )
-            {
-                int displayName = returnCursor.getColumnIndex( OpenableColumns.DISPLAY_NAME );
-                int size        = returnCursor.getColumnIndex( OpenableColumns.SIZE );
-                if( displayName >= 0 && size >= 0 )
-                {
-                    //filename = returnCursor.getString( displayName );
-                    //fileSize = returnCursor.getLong( size );
-
-                    String fname = returnCursor.getString( displayName );
-                    Log.d( "Unity", "fname: "+fname );
-                }
-
-            }
-        }
-        catch( Exception e )
-        {
-            Log.e( "Unity", "Exception:", e );
-        }
-        finally
-        {
-            if( returnCursor != null )
-                returnCursor.close();
-        }
-
-        if( filename == null || filename.length() < 3 )
-            filename = "temp";*/
 
         // try get extension
         String extension = null;
@@ -221,5 +199,230 @@ public class MobileImagePicker extends AppCompatActivity
         }
 
         return null;
+    }
+
+
+
+
+    private static BitmapFactory.Options GetImageMetadata(final String path )
+    {
+        try
+        {
+            BitmapFactory.Options result = new BitmapFactory.Options();
+            result.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile( path, result );
+
+            return result;
+        }
+        catch( Exception e )
+        {
+            Log.e( TAG, "Exception:", e );
+            return null;
+        }
+    }
+    // Credit: https://stackoverflow.com/a/30572852/2373034
+    public static int GetImageOrientation( Context context, final String path )
+    {
+        try
+        {
+            ExifInterface exif = new ExifInterface( path );
+            int orientationEXIF = exif.getAttributeInt( ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED );
+            if( orientationEXIF != ExifInterface.ORIENTATION_UNDEFINED )
+                return orientationEXIF;
+        }
+        catch( Exception e )
+        {
+        }
+
+        Cursor cursor = null;
+        try
+        {
+            cursor = context.getContentResolver().query( Uri.fromFile( new File( path ) ), new String[] { MediaStore.Images.Media.ORIENTATION }, null, null, null );
+            if( cursor != null && cursor.moveToFirst() )
+            {
+                int or = cursor.getColumnIndex( MediaStore.Images.Media.ORIENTATION );
+                if( or >= 0 )
+                {
+                    int orientation = cursor.getInt( or );
+                    if( orientation == 90 )
+                        return ExifInterface.ORIENTATION_ROTATE_90;
+                    if( orientation == 180 )
+                        return ExifInterface.ORIENTATION_ROTATE_180;
+                    if( orientation == 270 )
+                        return ExifInterface.ORIENTATION_ROTATE_270;
+                }
+
+                return ExifInterface.ORIENTATION_NORMAL;
+            }
+        }
+        catch( Exception e )
+        {
+            // nothing to do here
+        }
+        finally
+        {
+            if( cursor != null )
+                cursor.close();
+        }
+
+        return ExifInterface.ORIENTATION_UNDEFINED;
+    }
+
+    // Credit: https://gist.github.com/aviadmini/4be34097dfdb842ae066fae48501ed41
+    private static Matrix GetImageOrientationCorrectionMatrix( final int orientation, final float scale )
+    {
+        Matrix matrix = new Matrix();
+
+        switch( orientation )
+        {
+            case ExifInterface.ORIENTATION_ROTATE_270:
+            {
+                matrix.postRotate( 270 );
+                matrix.postScale( scale, scale );
+
+                break;
+            }
+            case ExifInterface.ORIENTATION_ROTATE_180:
+            {
+                matrix.postRotate( 180 );
+                matrix.postScale( scale, scale );
+
+                break;
+            }
+            case ExifInterface.ORIENTATION_ROTATE_90:
+            {
+                matrix.postRotate( 90 );
+                matrix.postScale( scale, scale );
+
+                break;
+            }
+            case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+            {
+                matrix.postScale( -scale, scale );
+                break;
+            }
+            case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+            {
+                matrix.postScale( scale, -scale );
+                break;
+            }
+            case ExifInterface.ORIENTATION_TRANSPOSE:
+            {
+                matrix.postRotate( 90 );
+                matrix.postScale( -scale, scale );
+
+                break;
+            }
+            case ExifInterface.ORIENTATION_TRANSVERSE:
+            {
+                matrix.postRotate( 270 );
+                matrix.postScale( -scale, scale );
+
+                break;
+            }
+            default:
+            {
+                matrix.postScale( scale, scale );
+                break;
+            }
+        }
+
+        return matrix;
+    }
+
+    public static String EnsureImageCompatibility( Context context, String path, final String temporaryFilePath, final int maxSize )
+    {
+        BitmapFactory.Options metadata = GetImageMetadata( path );
+        if( metadata == null )
+            return path;
+
+        boolean shouldCreateNewBitmap = false;
+        if( metadata.outWidth > maxSize || metadata.outHeight > maxSize )
+            shouldCreateNewBitmap = true;
+
+        if( metadata.outMimeType != null && !metadata.outMimeType.equals( "image/jpeg" ) && !metadata.outMimeType.equals( "image/png" ) )
+            shouldCreateNewBitmap = true;
+
+        int orientation = GetImageOrientation( context, path );
+        if( orientation != ExifInterface.ORIENTATION_NORMAL && orientation != ExifInterface.ORIENTATION_UNDEFINED )
+            shouldCreateNewBitmap = true;
+
+        if( shouldCreateNewBitmap )
+        {
+            Bitmap bitmap = null;
+            FileOutputStream out = null;
+
+            try
+            {
+                // Credit: https://developer.android.com/topic/performance/graphics/load-bitmap.html
+                int sampleSize = 1;
+                int halfHeight = metadata.outHeight / 2;
+                int halfWidth = metadata.outWidth / 2;
+                while( ( halfHeight / sampleSize ) >= maxSize || ( halfWidth / sampleSize ) >= maxSize )
+                    sampleSize *= 2;
+
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inSampleSize = sampleSize;
+                options.inJustDecodeBounds = false;
+                bitmap = BitmapFactory.decodeFile( path, options );
+
+                float scaleX = 1f, scaleY = 1f;
+                if( bitmap.getWidth() > maxSize )
+                    scaleX = maxSize / (float) bitmap.getWidth();
+                if( bitmap.getHeight() > maxSize )
+                    scaleY = maxSize / (float) bitmap.getHeight();
+
+                // Create a new bitmap if it should be scaled down or if its orientation is wrong
+                float scale = Math.min(scaleX, scaleY);
+                if( scale < 1f || ( orientation != ExifInterface.ORIENTATION_NORMAL && orientation != ExifInterface.ORIENTATION_UNDEFINED ) )
+                {
+                    Matrix transformationMatrix = GetImageOrientationCorrectionMatrix( orientation, scale );
+                    Bitmap transformedBitmap = Bitmap.createBitmap( bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), transformationMatrix, true );
+                    if( transformedBitmap != bitmap )
+                    {
+                        bitmap.recycle();
+                        bitmap = transformedBitmap;
+                    }
+                }
+
+                out = new FileOutputStream( temporaryFilePath );
+                if( metadata.outMimeType == null || !metadata.outMimeType.equals( "image/jpeg" ) )
+                    bitmap.compress( Bitmap.CompressFormat.PNG, 100, out );
+                else
+                    bitmap.compress( Bitmap.CompressFormat.JPEG, 100, out );
+
+                path = temporaryFilePath;
+            }
+            catch( Exception e )
+            {
+                Log.e( TAG, "Exception:", e );
+
+                try
+                {
+                    File temporaryFile = new File( temporaryFilePath );
+                    if( temporaryFile.exists() )
+                        temporaryFile.delete();
+                }
+                catch( Exception e2 )
+                {
+                }
+            }
+            finally
+            {
+                if( bitmap != null )
+                    bitmap.recycle();
+
+                try
+                {
+                    if( out != null )
+                        out.close();
+                }
+                catch( Exception e )
+                {
+                }
+            }
+        }
+
+        return path;
     }
 }
